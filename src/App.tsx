@@ -1,11 +1,8 @@
-import './App.css'
-function App() {
+import "./App.css";
+import { AppLayout } from "./layout/layout";
 
-  return (
-    <>
-      <h1>FE Test - Duong Anh Tu</h1>
-    </>
-  )
+function App() {
+  return <AppLayout />;
 }
 
-export default App
+export default App;
