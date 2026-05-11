@@ -13,35 +13,35 @@ export const selectAllTasks = createSelector(
 export const selectFilteredTasks = createSelector(
   [selectAllTasks, selectFilters],
   (tasks, filters) => {
-    const searchText = filters.searchText.trim().toLowerCase();
-    const hasSearchText = searchText.length > 0;
-    const hasStatuses = filters.status.length > 0;
-    const hasPriority = Boolean(filters.priority);
-    const hasDueDate = Boolean(filters.dueDate);
-
     return tasks.filter((task) => {
-      const matchText = !hasSearchText
-        ? true
-        : [task.title, task.description ?? ""].some((value) =>
-            value.toLowerCase().includes(searchText),
-          );
+      const searchText = filters.searchText.trim().toLowerCase();
+      const matchText =
+        !searchText ||
+        [task.title, task.description ?? ""].some((value) =>
+          value.toLowerCase().includes(searchText),
+        );
 
-      const matchStatus = !hasStatuses
-        ? true
-        : filters.status.includes(task.status);
+      const matchStatus =
+        filters.status.length === 0 || filters.status.includes(task.status);
 
-      const matchPriority = !hasPriority
-        ? true
-        : task.priority === filters.priority;
+      const matchPriority =
+        filters.priority.length === 0 ||
+        filters.priority.includes(task.priority);
 
-      let matchDate = true;
-      if (hasDueDate && filters.dueDate) {
-        const taskTime = new Date(task.createdAt).getTime();
-        const filterTime = new Date(filters.dueDate).getTime();
-        matchDate = taskTime >= filterTime;
+      let matchDateRange = true;
+      if (filters.dueDateRange) {
+        const [startDate, endDate] = filters.dueDateRange;
+        if (task.dueDate) {
+          const taskDate = new Date(task.dueDate).getTime();
+          const start = new Date(startDate).getTime();
+          const end = new Date(endDate).getTime();
+          matchDateRange = taskDate >= start && taskDate <= end;
+        } else {
+          matchDateRange = false;
+        }
       }
 
-      return matchText && matchStatus && matchPriority && matchDate;
+      return matchText && matchStatus && matchPriority && matchDateRange;
     });
   },
 );

@@ -18,6 +18,7 @@ interface TaskModalProps {
   task: Task | null;
   onCancel: () => void;
   onSubmit: (values: TaskFormValues) => void;
+  loading?: boolean;
 }
 
 const statusOptions: Array<{ value: Task["status"]; label: string }> = [
@@ -32,9 +33,14 @@ const priorityOptions: Array<{ value: Task["priority"]; label: string }> = [
   { value: "high", label: "Cao" },
 ];
 
-const ModalForm = ({ openModal, task, onCancel, onSubmit }: TaskModalProps) => {
+const ModalForm = ({
+  openModal,
+  task,
+  onCancel,
+  onSubmit,
+  loading,
+}: TaskModalProps) => {
   const [form] = Form.useForm<TaskFormValues>();
-
   useEffect(() => {
     if (!openModal) return;
 
@@ -59,6 +65,8 @@ const ModalForm = ({ openModal, task, onCancel, onSubmit }: TaskModalProps) => {
       maskClosable={false}
       width={720}
       onOk={form.submit}
+      okButtonProps={{ loading }}
+      cancelButtonProps={{ disabled: loading }}
     >
       <Form<TaskFormValues>
         form={form}

@@ -24,8 +24,8 @@ export const persistTasks = (items: Task[]) => {
 export interface Filters {
   searchText: string;
   status: Task["status"][];
-  priority?: Task["priority"] | null;
-  dueDate: string;
+  priority: Task["priority"][];
+  dueDateRange: [string, string] | null;
 }
 
 export interface Pagination {
@@ -42,8 +42,8 @@ export interface TaskState {
 const initialFilters: Filters = {
   searchText: "",
   status: [],
-  priority: null,
-  dueDate: "",
+  priority: [],
+  dueDateRange: null,
 };
 
 const initialState: TaskState = {
@@ -100,10 +100,6 @@ export const tasksSlice = createSlice({
       state.filters = initialFilters;
       state.pagination.currentPage = 1;
     },
-
-    setPage: (state, action: PayloadAction<Partial<Pagination>>) => {
-      state.pagination = { ...state.pagination, ...action.payload };
-    },
   },
 });
 
@@ -115,7 +111,6 @@ export const {
   updateTaskStatus,
   setFilter,
   resetFilters,
-  setPage,
 } = tasksSlice.actions;
 
 export default tasksSlice.reducer;

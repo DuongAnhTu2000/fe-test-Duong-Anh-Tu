@@ -1,5 +1,15 @@
-import { useMemo, useState } from "react";
-import { Button, Modal, Select, Space, Table, Tag, message } from "antd";
+import { useMemo, useState, useCallback } from "react";
+import {
+  Button,
+  Modal,
+  Select,
+  Space,
+  Table,
+  Tag,
+  message,
+  Input,
+  DatePicker,
+} from "antd";
 import { DeleteOutlined, EditOutlined } from "@ant-design/icons";
 import { useAppDispatch, useAppSelector } from "../../store/hooks";
 import {
@@ -8,6 +18,8 @@ import {
   updateTaskStatus,
   updateTask,
   addTask,
+  setFilter,
+  resetFilters,
 } from "../../store/slices/taskSlice";
 import type { TableProps } from "antd";
 import type { Key } from "react";
@@ -20,16 +32,15 @@ import type {
 import type { Task } from "../../types/task";
 import { PlusOutlined } from "@ant-design/icons";
 import ModalForm, { type TaskFormValues } from "../../component/modal";
+import dayjs from "dayjs";
+import { selectFilteredTasks } from "../../store/selector/tasksSelectors";
 
 type SortOrder = "ascend" | "descend" | null;
-type SortableTaskField = "title" | "dueDate" | "priority";
 
 interface TableParams {
   pagination?: TablePaginationConfig;
-  sortField?: SortableTaskField;
+  sortField?: string;
   sortOrder?: SortOrder;
-  filters?: Record<string, FilterValue | null>;
-  sorter?: SorterResult<Task> | SorterResult<Task>[];
 }
 
 const statusOptions: Array<{ value: Task["status"]; label: string }> = [
@@ -48,8 +59,9 @@ const priorityConfig: Record<
 };
 
 const ListTasks = () => {
-  const tasks = useAppSelector((state) => state.tasks.items);
+  const filteredTasks = useAppSelector(selectFilteredTasks);
   const dispatch = useAppDispatch();
+  const filterFields = useAppSelector((state) => state.tasks.filters);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
@@ -58,50 +70,124 @@ const ListTasks = () => {
       current: 1,
       pageSize: 10,
     },
-    sortField: undefined,
+    sortField: undefined as string | undefined,
     sortOrder: undefined,
   });
+  const [searchTimeout, setSearchTimeout] =
+    useState<ReturnType<typeof setTimeout>>();
+  const [loading, setLoading] = useState(false);
+  const [filterTimeout, setFilterTimeout] =
+    useState<ReturnType<typeof setTimeout>>();
+  const [actionTimeout, setActionTimeout] =
+    useState<ReturnType<typeof setTimeout>>();
 
-  const sortedAndPaginatedData = useMemo((): Task[] => {
-    const { sortField, sortOrder } = tableParams;
+  const handleSearchChange = useCallback(
+    (value: string) => {
+      setLoading(true);
+      clearTimeout(searchTimeout);
+      const timeout = setTimeout(() => {
+        dispatch(setFilter({ searchText: value }));
+        setLoading(false);
+      }, 300);
+      setSearchTimeout(timeout);
+    },
+    [dispatch, searchTimeout],
+  );
 
-    // Sử dụng Record để đảm bảo mọi field trong SortableTaskField đều được xử lý
-    const extractors: Record<
-      SortableTaskField,
-      (task: Task) => string | number
-    > = {
-      title: (task) => task.title.toLowerCase(),
-      dueDate: (task) => (task.dueDate ? new Date(task.dueDate).getTime() : 0),
-      priority: (task) => ({ high: 3, medium: 2, low: 1 })[task.priority],
-    };
+  const handleStatusFilterChange = useCallback(
+    (value: Task["status"][]) => {
+      setLoading(true);
+      clearTimeout(filterTimeout);
+      dispatch(setFilter({ status: value }));
+      const timeout = setTimeout(() => {
+        setLoading(false);
+      }, 300);
+      setFilterTimeout(timeout);
+    },
+    [dispatch, filterTimeout],
+  );
 
-    const directionMultiplier =
-      { ascend: 1, descend: -1 }[sortOrder as string] || 0;
-    const getValue = sortField ? extractors[sortField] : null;
+  const handlePriorityFilterChange = useCallback(
+    (value: Task["priority"][]) => {
+      setLoading(true);
+      clearTimeout(filterTimeout);
+      dispatch(setFilter({ priority: value }));
+      const timeout = setTimeout(() => {
+        setLoading(false);
+      }, 300);
+      setFilterTimeout(timeout);
+    },
+    [dispatch, filterTimeout],
+  );
 
-    return !getValue || directionMultiplier === 0
-      ? [...tasks]
-      : [...tasks].sort((firstTask, secondTask) => {
-          const firstValue = getValue(firstTask);
-          const secondValue = getValue(secondTask);
+  const handleDateRangeChange = useCallback(
+    (dates: [dayjs.Dayjs | null, dayjs.Dayjs | null] | null) => {
+      setLoading(true);
+      clearTimeout(filterTimeout);
+      if (dates && dates[0] && dates[1]) {
+        dispatch(
+          setFilter({
+            dueDateRange: [
+              dates[0].format("YYYY-MM-DD"),
+              dates[1].format("YYYY-MM-DD"),
+            ],
+          }),
+        );
+      } else {
+        dispatch(setFilter({ dueDateRange: null }));
+      }
+      const timeout = setTimeout(() => {
+        setLoading(false);
+      }, 300);
+      setFilterTimeout(timeout);
+    },
+    [dispatch, filterTimeout],
+  );
 
-          const comparisonResult =
-            typeof firstValue === "string" && typeof secondValue === "string"
-              ? firstValue.localeCompare(secondValue)
-              : (firstValue as number) - (secondValue as number);
-
-          return comparisonResult * directionMultiplier;
-        });
-  }, [tasks, tableParams]);
-
-  const paginatedData = useMemo(() => {
-    const { current = 1, pageSize = 10 } = tableParams.pagination || {};
-    const start = (current - 1) * pageSize;
-    const end = start + pageSize;
-    return sortedAndPaginatedData.slice(start, end);
-  }, [sortedAndPaginatedData, tableParams.pagination]);
+  const handleResetFilters = useCallback(() => {
+    setLoading(true);
+    clearTimeout(filterTimeout);
+    dispatch(resetFilters());
+    setTableParams({
+      pagination: { current: 1, pageSize: 10 },
+      sortField: undefined,
+      sortOrder: undefined,
+    });
+    const timeout = setTimeout(() => {
+      setLoading(false);
+    }, 300);
+    setFilterTimeout(timeout);
+  }, [dispatch, filterTimeout]);
 
   const hasSelectedRows = selectedRowKeys.length > 0;
+
+  const handlePaginatedData = useMemo(() => {
+    const priorityOrder = { high: 3, medium: 2, low: 1 };
+    const { pagination, sortField, sortOrder } = tableParams;
+    const { current = 1, pageSize = 10 } = pagination || {};
+
+    const sorters: Record<string, (a: Task, b: Task) => number> = {
+      title: (a, b) => a.title.localeCompare(b.title),
+      priority: (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority],
+      dueDate: (a, b) => {
+        const datePicker = (str?: string) => {
+          if (!str) return 0;
+          const [date, month, year] = str.split("/").map(Number);
+          return new Date(2000 + year, month - 1, date).getTime();
+        };
+        return datePicker(a.dueDate) - datePicker(b.dueDate);
+      },
+    };
+
+    const processedTasks = [...filteredTasks];
+    if (sortField && sortOrder && sorters[sortField]) {
+      const orderFactor = sortOrder === "ascend" ? 1 : -1;
+      processedTasks.sort((a, b) => sorters[sortField](a, b) * orderFactor);
+    }
+
+    const startIndex = (current - 1) * pageSize;
+    return processedTasks.slice(startIndex, startIndex + pageSize);
+  }, [filteredTasks, tableParams]);
 
   const columns: ColumnsType<Task> = [
     {
@@ -198,12 +284,14 @@ const ListTasks = () => {
     const sortField = Array.isArray(sorter) ? sorter[0].field : sorter.field;
     setTableParams({
       pagination,
-      sortField: sortField as SortableTaskField | undefined,
+      sortField: sortField as string | undefined,
       sortOrder: Array.isArray(sorter) ? sorter[0].order : sorter.order,
     });
   };
 
   const handleSubmitTask = (values: TaskFormValues) => {
+    setLoading(true);
+    clearTimeout(actionTimeout);
     const isEditing = !!selectedTask;
 
     const task: Task = {
@@ -219,7 +307,11 @@ const ListTasks = () => {
     };
 
     dispatch(isEditing ? updateTask(task) : addTask(task));
-    handleCloseTaskModal();
+    const timeout = setTimeout(() => {
+      handleCloseTaskModal();
+      setLoading(false);
+    }, 300);
+    setActionTimeout(timeout);
   };
 
   const handleCloseTaskModal = () => {
@@ -232,26 +324,38 @@ const ListTasks = () => {
       title: "Xác nhận xóa task",
       content: `Bạn có chắc chắn muốn xóa task "${record.title}" không?`,
       okText: "Xóa",
-      okButtonProps: { danger: true },
+      okButtonProps: { danger: true, loading: false },
       cancelText: "Hủy",
       onOk: () => {
+        setLoading(true);
+        clearTimeout(actionTimeout);
         dispatch(deleteTask(record.id));
         message.success("Đã xóa task");
+        const timeout = setTimeout(() => {
+          setLoading(false);
+        }, 300);
+        setActionTimeout(timeout);
       },
     });
   };
 
-  const handleDeleteAllTasks = () => {
+  const handleDeleteSelectedTasks = () => {
     Modal.confirm({
       title: "Xác nhận xóa hàng loạt",
       content: `Bạn có chắc chắn muốn xóa ${selectedRowKeys.length} task đã chọn không?`,
       okText: "Xóa tất cả",
-      okButtonProps: { danger: true },
+      okButtonProps: { danger: true, loading: false },
       cancelText: "Hủy",
       onOk: () => {
+        setLoading(true);
+        clearTimeout(actionTimeout);
         dispatch(deleteManyTasks(selectedRowKeys));
         setSelectedRowKeys([]);
         message.success("Đã xóa các task đã chọn");
+        const timeout = setTimeout(() => {
+          setLoading(false);
+        }, 300);
+        setActionTimeout(timeout);
       },
     });
   };
@@ -277,6 +381,62 @@ const ListTasks = () => {
 
   return (
     <div style={{ padding: "20px" }}>
+      <div
+        style={{
+          marginBottom: 20,
+          display: "flex",
+          gap: 12,
+          flexWrap: "wrap",
+          alignItems: "end",
+        }}
+      >
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <Input.Search
+            placeholder="Tìm kiếm theo tiêu đề..."
+            onSearch={handleSearchChange}
+            onChange={(e) => handleSearchChange(e.target.value)}
+            style={{ width: "100%" }}
+          />
+        </div>
+
+        <Select
+          mode="multiple"
+          placeholder="Lọc trạng thái"
+          value={filterFields.status}
+          onChange={handleStatusFilterChange}
+          options={statusOptions}
+          style={{ minWidth: 150 }}
+          allowClear
+        />
+
+        <Select
+          mode="multiple"
+          placeholder="Lọc độ ưu tiên"
+          value={filterFields.priority}
+          onChange={handlePriorityFilterChange}
+          options={Object.entries(priorityConfig).map(([key, config]) => ({
+            value: key as Task["priority"],
+            label: config.label,
+          }))}
+          style={{ minWidth: 150 }}
+          allowClear
+        />
+        <DatePicker.RangePicker
+          value={
+            filterFields.dueDateRange
+              ? [
+                  dayjs(filterFields.dueDateRange[0]),
+                  dayjs(filterFields.dueDateRange[1]),
+                ]
+              : null
+          }
+          onChange={handleDateRangeChange}
+          format="DD/MM/YYYY"
+          placeholder={["Từ ngày", "Đến ngày"]}
+        />
+        <Button onClick={handleResetFilters}>Reset</Button>
+      </div>
+
       <Space
         style={{ marginBottom: 16, display: "flex", justifyContent: "left" }}
       >
@@ -290,7 +450,7 @@ const ListTasks = () => {
         <Button
           danger
           disabled={!hasSelectedRows}
-          onClick={handleDeleteAllTasks}
+          onClick={handleDeleteSelectedTasks}
         >
           Xóa đã chọn
         </Button>
@@ -298,23 +458,24 @@ const ListTasks = () => {
       </Space>
       <Table<Task>
         columns={columns}
-        dataSource={paginatedData}
+        dataSource={handlePaginatedData}
         rowKey="id"
         rowSelection={rowSelection}
         pagination={{
           current: tableParams.pagination?.current || 1,
           pageSize: tableParams.pagination?.pageSize || 10,
-          total: sortedAndPaginatedData.length,
+          total: filteredTasks.length,
           showSizeChanger: true,
         }}
         onChange={handleTableChange}
-        loading={false}
+        loading={loading}
       />
       <ModalForm
         openModal={isTaskModalOpen}
         task={selectedTask}
         onCancel={handleCloseTaskModal}
         onSubmit={handleSubmitTask}
+        loading={loading}
       />
     </div>
   );
