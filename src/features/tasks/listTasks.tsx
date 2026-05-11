@@ -1,7 +1,16 @@
-import { useState, useMemo } from "react";
-import { Table, Tag, Button, Space } from "antd";
-import { EditOutlined, DeleteOutlined } from "@ant-design/icons";
-import { useAppSelector } from "../../store/hooks";
+import { useMemo, useState } from "react";
+import { Button, Modal, Select, Space, Table, Tag, message } from "antd";
+import { DeleteOutlined, EditOutlined } from "@ant-design/icons";
+import { useAppDispatch, useAppSelector } from "../../store/hooks";
+import {
+  deleteManyTasks,
+  deleteTask,
+  updateTaskStatus,
+  updateTask,
+  addTask,
+} from "../../store/slices/taskSlice";
+import type { TableProps } from "antd";
+import type { Key } from "react";
 import type {
   ColumnsType,
   TablePaginationConfig,
@@ -9,6 +18,8 @@ import type {
   FilterValue,
 } from "antd/es/table/interface";
 import type { Task } from "../../types/task";
+import { PlusOutlined } from "@ant-design/icons";
+import ModalForm, { type TaskFormValues } from "../../component/modal";
 
 type SortOrder = "ascend" | "descend" | null;
 type SortableTaskField = "title" | "dueDate" | "priority";
@@ -21,8 +32,27 @@ interface TableParams {
   sorter?: SorterResult<Task> | SorterResult<Task>[];
 }
 
+const statusOptions: Array<{ value: Task["status"]; label: string }> = [
+  { value: "todo", label: "To Do" },
+  { value: "in_progress", label: "In Progress" },
+  { value: "done", label: "Done" },
+];
+
+const priorityConfig: Record<
+  Task["priority"],
+  { color: string; label: string }
+> = {
+  high: { color: "red", label: "Cao" },
+  medium: { color: "orange", label: "Trung bình" },
+  low: { color: "green", label: "Thấp" },
+};
+
 const ListTasks = () => {
   const tasks = useAppSelector((state) => state.tasks.items);
+  const dispatch = useAppDispatch();
+  const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
+  const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
+  const [selectedTask, setSelectedTask] = useState<Task | null>(null);
   const [tableParams, setTableParams] = useState<TableParams>({
     pagination: {
       current: 1,
@@ -71,6 +101,8 @@ const ListTasks = () => {
     return sortedAndPaginatedData.slice(start, end);
   }, [sortedAndPaginatedData, tableParams.pagination]);
 
+  const hasSelectedRows = selectedRowKeys.length > 0;
+
   const columns: ColumnsType<Task> = [
     {
       title: "Tiêu đề",
@@ -85,17 +117,19 @@ const ListTasks = () => {
       dataIndex: "status",
       key: "status",
       width: "15%",
-      render: (status: Task["status"]) => {
-        const statusConfig: Record<
-          Task["status"],
-          { color: string; label: string }
-        > = {
-          todo: { color: "default", label: "To Do" },
-          in_progress: { color: "processing", label: "In Progress" },
-          done: { color: "success", label: "Done" },
-        };
-        const config = statusConfig[status];
-        return <Tag color={config.color}>{config.label}</Tag>;
+      render: (status: Task["status"], record: Task) => {
+        return (
+          <Select
+            size="small"
+            value={status}
+            variant="borderless"
+            options={statusOptions}
+            style={{ minWidth: 130 }}
+            onChange={(status) => {
+              dispatch(updateTaskStatus({ id: record.id, status }));
+            }}
+          />
+        );
       },
     },
     {
@@ -106,14 +140,6 @@ const ListTasks = () => {
       sorter: true,
       sortDirections: ["ascend", "descend"],
       render: (priority: Task["priority"]) => {
-        const priorityConfig: Record<
-          Task["priority"],
-          { color: string; label: string }
-        > = {
-          high: { color: "red", label: "Cao" },
-          medium: { color: "orange", label: "Trung bình" },
-          low: { color: "green", label: "Thấp" },
-        };
         const config = priorityConfig[priority];
         return <Tag color={config.color}>{config.label}</Tag>;
       },
@@ -147,7 +173,7 @@ const ListTasks = () => {
             type="primary"
             size="small"
             icon={<EditOutlined />}
-            onClick={() => handleEdit(record)}
+            onClick={() => handleOpenEditModal(record)}
           >
             Sửa
           </Button>
@@ -177,20 +203,104 @@ const ListTasks = () => {
     });
   };
 
-  const handleEdit = (record: Task) => {
-    console.log("Edit task:", record);
+  const handleSubmitTask = (values: TaskFormValues) => {
+    const isEditing = !!selectedTask;
+
+    const task: Task = {
+      id: selectedTask?.id ?? crypto.randomUUID(),
+      title: values.title,
+      description: values.description,
+      status: values.status,
+      priority: values.priority,
+      assignee: values.assignee,
+      dueDate: values.dueDate?.format("YYYY-MM-DD"),
+      tags: values.tags?.filter(Boolean),
+      createdAt: selectedTask?.createdAt ?? new Date().toISOString(),
+    };
+
+    dispatch(isEditing ? updateTask(task) : addTask(task));
+    handleCloseTaskModal();
+  };
+
+  const handleCloseTaskModal = () => {
+    setIsTaskModalOpen(false);
+    setSelectedTask(null);
   };
 
   const handleDelete = (record: Task) => {
-    console.log("Delete task:", record);
+    Modal.confirm({
+      title: "Xác nhận xóa task",
+      content: `Bạn có chắc chắn muốn xóa task "${record.title}" không?`,
+      okText: "Xóa",
+      okButtonProps: { danger: true },
+      cancelText: "Hủy",
+      onOk: () => {
+        dispatch(deleteTask(record.id));
+        message.success("Đã xóa task");
+      },
+    });
+  };
+
+  const handleDeleteAllTasks = () => {
+    Modal.confirm({
+      title: "Xác nhận xóa hàng loạt",
+      content: `Bạn có chắc chắn muốn xóa ${selectedRowKeys.length} task đã chọn không?`,
+      okText: "Xóa tất cả",
+      okButtonProps: { danger: true },
+      cancelText: "Hủy",
+      onOk: () => {
+        dispatch(deleteManyTasks(selectedRowKeys));
+        setSelectedRowKeys([]);
+        message.success("Đã xóa các task đã chọn");
+      },
+    });
+  };
+
+  const rowSelection: TableProps<Task>["rowSelection"] = {
+    selectedRowKeys,
+    preserveSelectedRowKeys: true,
+    onChange: (keys: Key[]) => {
+      setSelectedRowKeys(keys.map(String));
+    },
+    columnWidth: 10,
+  };
+
+  const handleOpenCreateModal = () => {
+    setSelectedTask(null);
+    setIsTaskModalOpen(true);
+  };
+
+  const handleOpenEditModal = (task: Task) => {
+    setSelectedTask(task);
+    setIsTaskModalOpen(true);
   };
 
   return (
     <div style={{ padding: "20px" }}>
+      <Space
+        style={{ marginBottom: 16, display: "flex", justifyContent: "left" }}
+      >
+        <Button
+          icon={<PlusOutlined />}
+          type="primary"
+          onClick={handleOpenCreateModal}
+        >
+          Thêm mới
+        </Button>
+        <Button
+          danger
+          disabled={!hasSelectedRows}
+          onClick={handleDeleteAllTasks}
+        >
+          Xóa đã chọn
+        </Button>
+        {hasSelectedRows && <div>Đã chọn {selectedRowKeys.length} task</div>}
+      </Space>
       <Table<Task>
         columns={columns}
         dataSource={paginatedData}
         rowKey="id"
+        rowSelection={rowSelection}
         pagination={{
           current: tableParams.pagination?.current || 1,
           pageSize: tableParams.pagination?.pageSize || 10,
@@ -199,7 +309,12 @@ const ListTasks = () => {
         }}
         onChange={handleTableChange}
         loading={false}
-        scroll={{ x: 1200 }}
+      />
+      <ModalForm
+        openModal={isTaskModalOpen}
+        task={selectedTask}
+        onCancel={handleCloseTaskModal}
+        onSubmit={handleSubmitTask}
       />
     </div>
   );

@@ -1,6 +1,26 @@
 import { createSlice, type PayloadAction } from "@reduxjs/toolkit";
 import type { Task } from "../../types/task";
 import { mockData } from "../../data/tasks";
+
+const TASK_STORAGE_KEY = "taskboard.items";
+
+const readPersistedTasks = (): Task[] | null => {
+  try {
+    const rawData = localStorage.getItem(TASK_STORAGE_KEY);
+    const parsedData = rawData ? JSON.parse(rawData) : null;
+    return parsedData ? parsedData : null;
+  } catch (error) {
+    console.error("Error reading tasks from localStorage:", error);
+    return null;
+  }
+};
+
+const getInitialTasks = () => readPersistedTasks() || mockData;
+
+export const persistTasks = (items: Task[]) => {
+  localStorage.setItem(TASK_STORAGE_KEY, JSON.stringify(items));
+};
+
 export interface Filters {
   searchText: string;
   status: Task["status"][];
@@ -27,7 +47,7 @@ const initialFilters: Filters = {
 };
 
 const initialState: TaskState = {
-  items: mockData,
+  items: getInitialTasks(),
   filters: initialFilters,
   pagination: {
     currentPage: 1,
@@ -43,25 +63,29 @@ export const tasksSlice = createSlice({
       state.items.unshift(action.payload);
     },
     updateTask: (state, action: PayloadAction<Task>) => {
-      const index = state.items.findIndex((t) => t.id === action.payload.id);
+      const index = state.items.findIndex(
+        (item) => item.id === action.payload.id,
+      );
       if (index !== -1) {
         state.items[index] = action.payload;
       }
     },
 
     deleteTask: (state, action: PayloadAction<string>) => {
-      state.items = state.items.filter((t) => t.id !== action.payload);
+      state.items = state.items.filter((item) => item.id !== action.payload);
     },
 
     deleteManyTasks: (state, action: PayloadAction<string[]>) => {
-      state.items = state.items.filter((t) => !action.payload.includes(t.id));
+      state.items = state.items.filter(
+        (item) => !action.payload.includes(item.id),
+      );
     },
 
     updateTaskStatus: (
       state,
       action: PayloadAction<{ id: string; status: Task["status"] }>,
     ) => {
-      const task = state.items.find((t) => t.id === action.payload.id);
+      const task = state.items.find((item) => item.id === action.payload.id);
       if (task) {
         task.status = action.payload.status;
       }
