@@ -21,7 +21,7 @@ export const AppLayout = () => {
           justifyContent: "space-between",
         }}
       >
-        <h2 style={{ margin: 0 }}>Task Board</h2>
+        <h2 style={{ margin: 0, color: "#000" }}>Task Board</h2>
         <Space>
           <Button
             type={currentPage === "dashboard" ? "primary" : "default"}

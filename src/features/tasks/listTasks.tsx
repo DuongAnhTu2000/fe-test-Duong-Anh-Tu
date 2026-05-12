@@ -20,14 +20,15 @@ import {
   addTask,
   setFilter,
   resetFilters,
+  setPage,
 } from "../../store/slices/taskSlice";
 import type { TableProps } from "antd";
 import type { Key } from "react";
 import type {
   ColumnsType,
   TablePaginationConfig,
-  SorterResult,
   FilterValue,
+  SorterResult,
 } from "antd/es/table/interface";
 import type { Task } from "../../types/task";
 import { PlusOutlined } from "@ant-design/icons";
@@ -36,12 +37,6 @@ import dayjs from "dayjs";
 import { selectFilteredTasks } from "../../store/selector/tasksSelectors";
 
 type SortOrder = "ascend" | "descend" | null;
-
-interface TableParams {
-  pagination?: TablePaginationConfig;
-  sortField?: string;
-  sortOrder?: SortOrder;
-}
 
 const statusOptions: Array<{ value: Task["status"]; label: string }> = [
   { value: "todo", label: "To Do" },
@@ -62,17 +57,12 @@ const ListTasks = () => {
   const filteredTasks = useAppSelector(selectFilteredTasks);
   const dispatch = useAppDispatch();
   const filterFields = useAppSelector((state) => state.tasks.filters);
+  const pagination = useAppSelector((state) => state.tasks.pagination);
   const [selectedRowKeys, setSelectedRowKeys] = useState<string[]>([]);
   const [isTaskModalOpen, setIsTaskModalOpen] = useState(false);
   const [selectedTask, setSelectedTask] = useState<Task | null>(null);
-  const [tableParams, setTableParams] = useState<TableParams>({
-    pagination: {
-      current: 1,
-      pageSize: 10,
-    },
-    sortField: undefined as string | undefined,
-    sortOrder: undefined,
-  });
+  const [sortField, setSortField] = useState<string | undefined>(undefined);
+  const [sortOrder, setSortOrder] = useState<SortOrder>(null);
   const [searchTimeout, setSearchTimeout] =
     useState<ReturnType<typeof setTimeout>>();
   const [loading, setLoading] = useState(false);
@@ -85,6 +75,7 @@ const ListTasks = () => {
     (value: string) => {
       setLoading(true);
       clearTimeout(searchTimeout);
+      setSelectedRowKeys([]);
       const timeout = setTimeout(() => {
         dispatch(setFilter({ searchText: value }));
         setLoading(false);
@@ -98,6 +89,7 @@ const ListTasks = () => {
     (value: Task["status"][]) => {
       setLoading(true);
       clearTimeout(filterTimeout);
+      setSelectedRowKeys([]);
       dispatch(setFilter({ status: value }));
       const timeout = setTimeout(() => {
         setLoading(false);
@@ -111,6 +103,7 @@ const ListTasks = () => {
     (value: Task["priority"][]) => {
       setLoading(true);
       clearTimeout(filterTimeout);
+      setSelectedRowKeys([]);
       dispatch(setFilter({ priority: value }));
       const timeout = setTimeout(() => {
         setLoading(false);
@@ -124,6 +117,7 @@ const ListTasks = () => {
     (dates: [dayjs.Dayjs | null, dayjs.Dayjs | null] | null) => {
       setLoading(true);
       clearTimeout(filterTimeout);
+      setSelectedRowKeys([]);
       if (dates && dates[0] && dates[1]) {
         dispatch(
           setFilter({
@@ -147,12 +141,9 @@ const ListTasks = () => {
   const handleResetFilters = useCallback(() => {
     setLoading(true);
     clearTimeout(filterTimeout);
+    setSelectedRowKeys([]);
     dispatch(resetFilters());
-    setTableParams({
-      pagination: { current: 1, pageSize: 10 },
-      sortField: undefined,
-      sortOrder: undefined,
-    });
+    dispatch(setPage({ currentPage: 1, pageSize: 10 }));
     const timeout = setTimeout(() => {
       setLoading(false);
     }, 300);
@@ -162,32 +153,37 @@ const ListTasks = () => {
   const hasSelectedRows = selectedRowKeys.length > 0;
 
   const handlePaginatedData = useMemo(() => {
-    const priorityOrder = { high: 3, medium: 2, low: 1 };
-    const { pagination, sortField, sortOrder } = tableParams;
-    const { current = 1, pageSize = 10 } = pagination || {};
-
-    const sorters: Record<string, (a: Task, b: Task) => number> = {
-      title: (a, b) => a.title.localeCompare(b.title),
-      priority: (a, b) => priorityOrder[a.priority] - priorityOrder[b.priority],
-      dueDate: (a, b) => {
-        const datePicker = (str?: string) => {
-          if (!str) return 0;
-          const [date, month, year] = str.split("/").map(Number);
-          return new Date(2000 + year, month - 1, date).getTime();
-        };
-        return datePicker(a.dueDate) - datePicker(b.dueDate);
-      },
+    const priority_order: Record<Task["priority"], number> = {
+      high: 3,
+      medium: 2,
+      low: 1,
     };
 
-    const processedTasks = [...filteredTasks];
-    if (sortField && sortOrder && sorters[sortField]) {
-      const orderFactor = sortOrder === "ascend" ? 1 : -1;
-      processedTasks.sort((a, b) => sorters[sortField](a, b) * orderFactor);
-    }
+    const parseTaskDate = (dateStr?: string): number => {
+      if (!dateStr) return 0;
+      return new Date(dateStr).getTime();
+    };
 
-    const startIndex = (current - 1) * pageSize;
-    return processedTasks.slice(startIndex, startIndex + pageSize);
-  }, [filteredTasks, tableParams]);
+    const sorted_tasks: Record<string, (a: Task, b: Task) => number> = {
+      title: (a, b) => a.title.localeCompare(b.title),
+      priority: (a, b) =>
+        priority_order[a.priority] - priority_order[b.priority],
+      dueDate: (a, b) => parseTaskDate(a.dueDate) - parseTaskDate(b.dueDate),
+    };
+
+    const { currentPage = 1, pageSize = 10 } = pagination;
+
+    const sortedTasks =
+      sortField && sortOrder && sortField in sorted_tasks
+        ? [...filteredTasks].sort((a, b) => {
+            const comparison = sorted_tasks[sortField](a, b);
+            return sortOrder === "ascend" ? comparison : -comparison;
+          })
+        : filteredTasks;
+
+    const page = (currentPage - 1) * pageSize;
+    return sortedTasks.slice(page, page + pageSize);
+  }, [filteredTasks, sortField, sortOrder, pagination]);
 
   const columns: ColumnsType<Task> = [
     {
@@ -281,12 +277,16 @@ const ListTasks = () => {
     _filters: Record<string, FilterValue | null>,
     sorter: SorterResult<Task> | SorterResult<Task>[],
   ) => {
-    const sortField = Array.isArray(sorter) ? sorter[0].field : sorter.field;
-    setTableParams({
-      pagination,
-      sortField: sortField as string | undefined,
-      sortOrder: Array.isArray(sorter) ? sorter[0].order : sorter.order,
-    });
+    const sortData = Array.isArray(sorter) ? sorter[0] : sorter;
+    setSortField(sortData.field as string | undefined);
+    setSortOrder(sortData.order as SortOrder);
+    dispatch(
+      setPage({
+        currentPage: pagination.current || 1,
+        pageSize: pagination.pageSize || 10,
+      }),
+    );
+    setSelectedRowKeys([]);
   };
 
   const handleSubmitTask = (values: TaskFormValues) => {
@@ -462,8 +462,8 @@ const ListTasks = () => {
         rowKey="id"
         rowSelection={rowSelection}
         pagination={{
-          current: tableParams.pagination?.current || 1,
-          pageSize: tableParams.pagination?.pageSize || 10,
+          current: pagination.currentPage || 1,
+          pageSize: pagination.pageSize || 10,
           total: filteredTasks.length,
           showSizeChanger: true,
         }}

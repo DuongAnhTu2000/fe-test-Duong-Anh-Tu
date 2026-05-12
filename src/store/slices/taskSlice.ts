@@ -100,6 +100,10 @@ export const tasksSlice = createSlice({
       state.filters = initialFilters;
       state.pagination.currentPage = 1;
     },
+
+    setPage: (state, action: PayloadAction<Partial<Pagination>>) => {
+      state.pagination = { ...state.pagination, ...action.payload };
+    },
   },
 });
 
@@ -111,6 +115,7 @@ export const {
   updateTaskStatus,
   setFilter,
   resetFilters,
+  setPage,
 } = tasksSlice.actions;
 
 export default tasksSlice.reducer;
