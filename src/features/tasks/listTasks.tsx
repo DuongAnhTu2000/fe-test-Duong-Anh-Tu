@@ -35,6 +35,7 @@ import { PlusOutlined } from "@ant-design/icons";
 import ModalForm, { type TaskFormValues } from "../../component/modal";
 import dayjs from "dayjs";
 import { selectFilteredTasks } from "../../store/selector/tasksSelectors";
+import { useUrlFilterSync } from "../../store/urlFilterSync";
 
 type SortOrder = "ascend" | "descend" | null;
 
@@ -70,9 +71,15 @@ const ListTasks = () => {
     useState<ReturnType<typeof setTimeout>>();
   const [actionTimeout, setActionTimeout] =
     useState<ReturnType<typeof setTimeout>>();
+  const [searchInputValue, setSearchInputValue] = useState(
+    filterFields.searchText,
+  );
+
+  useUrlFilterSync();
 
   const handleSearchChange = useCallback(
     (value: string) => {
+      setSearchInputValue(value);
       setLoading(true);
       clearTimeout(searchTimeout);
       setSelectedRowKeys([]);
@@ -142,6 +149,7 @@ const ListTasks = () => {
     setLoading(true);
     clearTimeout(filterTimeout);
     setSelectedRowKeys([]);
+    setSearchInputValue("");
     dispatch(resetFilters());
     dispatch(setPage({ currentPage: 1, pageSize: 10 }));
     const timeout = setTimeout(() => {
@@ -393,6 +401,7 @@ const ListTasks = () => {
         <div style={{ flex: 1, minWidth: 200 }}>
           <Input.Search
             placeholder="Tìm kiếm theo tiêu đề..."
+            value={searchInputValue}
             onSearch={handleSearchChange}
             onChange={(e) => handleSearchChange(e.target.value)}
             style={{ width: "100%" }}

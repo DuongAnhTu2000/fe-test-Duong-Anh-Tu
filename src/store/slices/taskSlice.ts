@@ -9,8 +9,7 @@ const readPersistedTasks = (): Task[] | null => {
     const rawData = localStorage.getItem(TASK_STORAGE_KEY);
     const parsedData = rawData ? JSON.parse(rawData) : null;
     return parsedData ? parsedData : null;
-  } catch (error) {
-    console.error("Error reading tasks from localStorage:", error);
+  } catch {
     return null;
   }
 };
